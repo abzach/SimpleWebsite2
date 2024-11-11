@@ -1,0 +1,21 @@
+  environment: test
+  appServicePlanName: test-app-service-plan
+  appServiceName: test-app-service
+  keyVaultName: test-key-vault
+  appInsightsName: test-app-insights
+  storageAccountName: teststorageaccount
+  storageAccountSku: Standard_GRS
+  storageAccountKind: StorageV2
+  appServicePlanSku: B1
+  appServiceTier: Basic
+  appServicePlanSize: B1
+  appServicePlanCapacity: 1
+  keyVaultFamily: A
+  keyVaultKind: standard
+  accessPolicies:
+  - objectId: 3df8d3af-5b86-4dd9-8f34-39e9e4b1d258 // This is the object ID for DevOps SG
+  - objectId: 2b0fb052-6c5e-4c6c-ba2d-465ec16dbf87 // This is the object ID for Architects SG
+  location: westus
+  tags:
+    environment: test
+    project: simplewebsite2

@@ -1,0 +1,20 @@
+environment: prod
+appServicePlanName: prod-app-service-plan
+appServiceName: prod-app-service
+keyVaultName: prod-key-vault
+appInsightsName: prod-app-insights
+storageAccountSku: Premium_LRS
+storageAccountKind: StorageV2
+appServicePlanSku: P1v2
+appServiceTier: PremiumV2
+appServicePlanSize: P1v2
+appServicePlanCapacity: 1
+keyVaultFamily: A
+keyVaultKind: premium
+accessPolicies:
+  - objectId: 3df8d3af-5b86-4dd9-8f34-39e9e4b1d258 // object ID for DevOps SG
+  - objectId: 2b0fb052-6c5e-4c6c-ba2d-465ec16dbf87 // object ID for Architects SG
+location: eastus
+tags:
+  environment: prod
+  project: simplewebsite2

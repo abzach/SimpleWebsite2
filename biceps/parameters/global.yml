@@ -1,0 +1,5 @@
+serviceConnection: ems500-devops-azure
+azWinImage: windows-latest # 1 - Microsoft-hosted Windows agent
+azLinImage: ubuntu-latest # 2- Microsoft-hosted Linux agent
+customAgentPool: 'Hyper-V ' # Custom agent pool
+agentType: 2

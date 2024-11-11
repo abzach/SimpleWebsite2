@@ -1,0 +1,226 @@
+trigger:
+  branches:
+    include:
+      - master
+schedules:
+  - cron: "0 18 * * *"
+    displayName: Daily 6 PM Trigger
+    branches:
+      include:
+        - master
+      variables:
+        - template: $(Build.ArtifactStagingDirectory)/SimpleWebsite2/parameters/global.yml
+
+stages:
+-
+- stage: Build
+   displayName: "Build Stage"
+  
+  jobs:
+  - job: BuildIAC
+    displayName: "Build IaC"
+    pool:
+      # name: $(customAgentPool)
+      vmImage: ${{ if eq(parameters.agentType, 1) }}:
+        ${{ parameters.azWinImage }}
+      ${{ else }}:
+        ${{ parameters.azLinImage }}        
+    steps:
+    - task: AzureCLI@2
+      inputs:
+        azureSubscription: $(serviceConnection)
+        scriptType: 'bash'
+        scriptLocation: 'inlineScript'
+        inlineScript: |
+          resourceGroupName=$(yq e '.resourceGroupName' $(Build.ArtifactStagingDirectory)/$(environment).yml)
+          az deployment group create \
+          --resource-group $resourceGroupName \
+          --template-file $(Build.ArtifactStagingDirectory)/SimpleWebsite2/templates/main.bicep \
+          --parameters @$(Build.ArtifactStagingDirectory)/SimpleWebsite2/parameters/$(environment).yml  
+
+  - job: BuildCode
+    displayName: "Build Application Code"
+    pool:
+      # name: $(customAgentPool)
+      vmImage: ${{ if eq(parameters.agentType, 1) }}:
+        ${{ parameters.azWinImage }}
+      ${{ else }}:
+        ${{ parameters.azLinImage }}  
+    steps:
+      - task: UseDotNet@2
+        displayName: "Use .NET Core sdk 6.x"
+        inputs:
+          packageType: 'sdk'
+          version: '6.x'
+
+      - task: DotNetCoreCLI@2
+        displayName: "Restore and Build .NET Application"
+        inputs:
+          command: 'build'
+          projects: '**/*.csproj'
+
+      - task: DotNetCoreCLI@2
+        displayName: "Publish .NET Application"
+        inputs:
+          command: 'publish'
+          projects: '**/*.csproj'
+          arguments: '--configuration Release --output $(Build.ArtifactStagingDirectory)/publish'
+
+      - publish: $(Build.ArtifactStagingDirectory)/publish
+        displayName: "Publish Build Artifacts"
+        artifact: webapp
+
+- stage: Deploy
+  dependsOn: Build
+  displayName: "Deploy Stage"
+  condition: eq(variables['Build.Reason'], 'Schedule')
+  jobs:
+  - deployment: DeployIACSToDev
+    environment: 'dev'
+    pool:
+      # name: $(customAgentPool)
+      vmImage: ${{ if eq(parameters.agentType, 1) }}:
+        ${{ parameters.azWinImage }}
+      ${{ else }}:
+        ${{ parameters.azLinImage }}      
+    strategy:
+      runOnce:
+        deploy:
+          steps:
+          - task: AzureCLI@2
+            inputs:
+              azureSubscription: $(serviceConnection)
+              scriptType: 'bash'
+              scriptLocation: 'inlineScript'
+              inlineScript: |
+                resourceGroupName=$(yq e '.resourceGroupName' $(Build.ArtifactStagingDirectory)/$(environment).yml)
+                az deployment group create \
+                --resource-group $resourceGroupName \
+                --template-file $(Build.ArtifactStagingDirectory)/SimpleWebsite2/templates/main.bicep \
+                --parameters @$(Build.ArtifactStagingDirectory)/SimpleWebsite2/parameters/$(environment).yml
+
+  - deployment: DeployCodeToDev
+    environment: 'dev'
+    pool:
+      # name: $(customAgentPool)
+      vmImage: ${{ if eq(parameters.agentType, 1) }}:
+        ${{ parameters.azWinImage }}
+      ${{ else }}:
+        ${{ parameters.azLinImage }}      
+    strategy:
+      runOnce:
+        deploy:
+          steps:
+          - task: DownloadPipelineArtifact@2
+            displayName: "Download Build Artifacts"
+            inputs:
+              artifactName: webapp
+
+          - task: AzureWebApp@1
+            displayName: "Deploy to Azure Web App"
+            inputs:
+              azureSubscription: $(serviceConnection)
+              appType: 'webApp'
+              appName: $(yq e '.appServiceName' $(Build.ArtifactStagingDirectory)/$(environment).yml)            
+              package: $(Pipeline.Workspace)/webapp/publish
+
+  - deployment: DeployIACSToTest
+    condition: succeeded()
+    environment: 'test'
+    pool:
+      # name: $(customAgentPool)      
+      vmImage: ${{ if eq(parameters.agentType, 1) }}:
+        ${{ parameters.azWinImage }}
+      ${{ else }}:
+        ${{ parameters.azLinImage }}      
+    strategy:
+      runOnce:
+        deploy:
+          steps:
+          - task: AzureCLI@2
+            inputs:
+              azureSubscription: $(serviceConnection)
+              scriptType: 'bash'
+              scriptLocation: 'inlineScript'
+              inlineScript: |
+                resourceGroupName=$(yq e '.resourceGroupName' $(Build.ArtifactStagingDirectory)/$(environment).yml)
+                az deployment group create \
+                --resource-group $resourceGroupName \
+                --template-file $(Build.ArtifactStagingDirectory)/SimpleWebsite2/templates/main.bicep \
+                --parameters @$(Build.ArtifactStagingDirectory)/SimpleWebsite2/parameters/$(environment).yml  
+
+  - deployment: DeployCodeToTest
+    condition: succeeded()
+    environment: 'test'
+    pool:
+      # name: $(customAgentPool)
+      vmImage: ${{ if eq(parameters.agentType, 1) }}:
+        ${{ parameters.azWinImage }}
+      ${{ else }}:
+        ${{ parameters.azLinImage }}      
+    strategy:
+      runOnce:
+        deploy:
+          steps:
+          - task: DownloadPipelineArtifact@2
+            displayName: "Download Build Artifacts"
+            inputs:
+              artifactName: webapp
+
+          - task: AzureWebApp@1
+            displayName: "Deploy to Azure Web App"
+            inputs:
+              azureSubscription: $(serviceConnection)
+              appType: 'webApp'
+              appName: $(yq e '.appServiceName' $(Build.ArtifactStagingDirectory)/$(environment).yml)            
+              package: $(Pipeline.Workspace)/webapp/publish
+
+  - deployment: DeployIACSToProd
+    environment: 'prod'
+    pool:
+      # name: $(customAgentPool)    
+      vmImage: ${{ if eq(parameters.agentType, 1) }}:
+        ${{ parameters.azWinImage }}
+      ${{ else }}:
+        ${{ parameters.azLinImage }}  
+    strategy:
+      runOnce:
+        deploy:
+          steps:
+          - task: AzureCLI@2
+            inputs:
+              azureSubscription: $(serviceConnection)
+              scriptType: 'bash'
+              scriptLocation: 'inlineScript'
+              inlineScript: |
+                resourceGroupName=$(yq e '.resourceGroupName' $(Build.ArtifactStagingDirectory)/$(environment).yml)
+                az deployment group create \
+                --resource-group $resourceGroupName \
+                --template-file $(Build.ArtifactStagingDirectory)/SimpleWebsite2/templates/main.bicep \
+                --parameters @$(Build.ArtifactStagingDirectory)/SimpleWebsite2/parameters/$(environment).yml        
+          - approval: Manual
+
+  - deployment: DeployCodeToProd
+    environment: 'prod'
+    pool:
+      # name: $(customAgentPool)
+      vmImage: ${{ if eq(parameters.agentType, 1) }}:
+        ${{ parameters.azWinImage }}
+      ${{ else }}:
+        ${{ parameters.azLinImage }}      
+    strategy:
+      runOnce:
+        deploy:
+          steps:
+          - task: DownloadPipelineArtifact@2
+            displayName: "Download Build Artifacts"
+            inputs:
+              artifactName: webapp
+
+          - task: AzureWebApp@1
+            displayName: "Deploy to Azure Web App"
+            inputs:
+              azureSubscription: $(serviceConnection)
+              appType: 'webApp'
+              appName: $(yq e '.appServiceName' $(Build.ArtifactStagingDirectory)/$(environment).yml)            
+              package: $(Pipeline.Workspace)/webapp/publish          
